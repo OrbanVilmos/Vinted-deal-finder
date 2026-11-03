@@ -20,6 +20,15 @@ EXCLUDED_KEYWORDS = [
     "camera lens", "lentila"
 ]
 
+# Csalásra vagy közvetlen kifizetésre utaló kifejezések a leírásban
+SCAM_PHRASES = [
+    "do not ship", "don't ship", "not buy now", "without buy now",
+    "nu trimit prin", "fara cumpara acum", "fara comanda",
+    "nie wysylam przez", "nie wysyłam przez", "bez kup teraz", "napisz na priv",
+    "nem postazom", "ne nyomj a vetelre", "csak elore utalas",
+    "whatsapp", "revolut transfer"
+]
+
 def is_hardware_candidate(item: dict) -> bool:
     """
     Gyorsszűrő: eldobja a kiegészítőket és az irreális árú hirdetéseket,
@@ -77,6 +86,15 @@ def run_bot():
 
             # Szabályalapú előszűrés
             if not is_hardware_candidate(item):
+                continue
+
+            # Részletes leírás letöltése a scam szűréshez
+            item = scraper.enrich_item_details(item)
+            
+            # Scam kulcsszavak ellenőrzése a friss leírásban
+            desc_lower = item.get("description", "").lower()
+            if any(phrase in desc_lower for phrase in SCAM_PHRASES):
+                print(f"    [ELŐSZŰRŐ] Csaló kifejezés a leírásban, kihagyva: '{item['title']}'")
                 continue
 
             print(f"\n>>> [ÍGÉRETES JELÖLT] {item['title']} - {item['price']} {item['currency']}")

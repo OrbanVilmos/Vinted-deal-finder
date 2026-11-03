@@ -257,6 +257,42 @@ class VintedScraper:
             log.error("Részletek lekérési hiba (%s): %s", item.get("id"), e)
             return {}
 
+    def enrich_item_details(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Megnyitja a termék konkrét oldalát, hogy kinyerje a teljes leírást 
+        és az összes képet, mielőtt az AI-hoz küldenénk.
+        """
+        url = item.get("url")
+        if not url:
+            return item
+
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": self.base_url,
+        }
+
+        try:
+            resp = self.session.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                html = resp.text
+                
+                # Leírás kinyerése a meta descriptionből vagy leírás blokkból
+                desc_match = re.search(r'<meta property="og:description" content="([^"]+)"', html)
+                if desc_match:
+                    item["description"] = desc_match.group(1)
+
+                # További képek linkjei, ha elérhetők
+                found_images = re.findall(r'https://images\d*\.vinted\.net/[^"\s\']+', html)
+                if found_images:
+                    # Kiszűrjük a duplikációkat
+                    clean_imgs = list(dict.fromkeys(found_images))
+                    item["images"] = clean_imgs[:5]
+        except Exception as e:
+            print(f"[SCRAPER] Nem sikerült kiegészíteni a hirdetés adatait: {e}")
+
+        return item
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

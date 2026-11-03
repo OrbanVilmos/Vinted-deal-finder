@@ -69,7 +69,10 @@ class ListingAnalyzer:
             "['battery_under_80', 'screen_scratches', 'non_original_display', 'back_glass_damaged', 'housing_scratches', 'no_box']\n"
             "3. Figyeld az utángyártott kijelző jeleit (vastag kávák, True Tone hiánya, beállítások hibaüzenet).\n"
             "4. Ha az akku 80% alatti vagy szervizt jelez, vedd fel a 'battery_under_80' hibát.\n"
-            "5. Ha az ár irreális (pl. működő 13 Pro Max gyanúsan olcsón), vagy külső chatre terel, jelöld scam-nek (is_scam=True) és indokold meg a scam_reason mezőben."
+            "5. CSALÁSSZŰRÉS (is_scam=True és scam_reason kötelező):\n"
+            "   - Megtagadja a Vinted fizetést/szállítást (pl. 'do not ship with buy now', 'nu trimit prin', 'nie wysyłam przez kup teraz', 'nem postázom').\n"
+            "   - Külső fizetést kér (Revolut, utalás, WhatsApp).\n"
+            "   - Az ár feltűnően túl szép, hogy igaz legyen gyanús indoklással."
         )
 
         contents = [prompt_text]
@@ -78,12 +81,19 @@ class ListingAnalyzer:
             if img_part:
                 contents.append(img_part)
 
-        # 3 próbálkozás a gemini-3.8-flash modellel automatikus várakozással 503 esetén
-        max_retries = 3
-        for attempt in range(max_retries):
+        # Garantáltan elérhető, nem túlterhelt modellek
+        candidate_models = [
+            "gemini-flash-lite-latest",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash"
+        ]
+
+        last_error = None
+        for model_name in candidate_models:
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-3.8-flash",
+                    model=model_name,
                     contents=contents,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -93,11 +103,12 @@ class ListingAnalyzer:
                 )
                 return ListingAnalysis.model_validate_json(response.text)
             except Exception as err:
-                if "503" in str(err) or "UNAVAILABLE" in str(err):
-                    wait_time = (attempt + 1) * 3
-                    print(f"    [AI VÁRAKOZÁS] Szerver terhelt (503). Újrapróbálás {wait_time} mp múlva...")
-                    time.sleep(wait_time)
+                err_str = str(err)
+                if "503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str:
+                    print(f"    [AI] {model_name} nem elérhető / terhelt. Váltás a következő modellre...")
+                    last_error = err
+                    time.sleep(1)
                     continue
                 raise err
 
-        raise RuntimeError("A Gemini API többszöri próbálkozás után is túlterhelt volt.")
+        raise RuntimeError(f"Egyik modell sem válaszolt: {last_error}")
