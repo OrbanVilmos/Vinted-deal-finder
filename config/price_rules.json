@@ -1,6 +1,6 @@
 {
   "iPhone 13 Pro Max": {
-    "base_sell_price": 1200,
+    "base_sell_price": 1400,
     "min_profit": 200,
     "penalties": {
       "battery_under_80": 150,
@@ -12,7 +12,7 @@
     }
   },
   "iPhone 13 Pro": {
-    "base_sell_price": 1050,
+    "base_sell_price": 1200,
     "min_profit": 180,
     "penalties": {
       "battery_under_80": 130,
@@ -24,7 +24,7 @@
     }
   },
   "iPhone 13": {
-    "base_sell_price": 850,
+    "base_sell_price": 800,
     "min_profit": 150,
     "penalties": {
       "battery_under_80": 120,
