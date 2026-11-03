@@ -1,0 +1,38 @@
+{
+  "iPhone 13 Pro Max": {
+    "base_sell_price": 1200,
+    "min_profit": 200,
+    "penalties": {
+      "battery_under_80": 150,
+      "screen_scratches": 100,
+      "non_original_display": 300,
+      "back_glass_damaged": 180,
+      "housing_scratches": 60,
+      "no_box": 30
+    }
+  },
+  "iPhone 13 Pro": {
+    "base_sell_price": 1050,
+    "min_profit": 180,
+    "penalties": {
+      "battery_under_80": 130,
+      "screen_scratches": 90,
+      "non_original_display": 250,
+      "back_glass_damaged": 150,
+      "housing_scratches": 50,
+      "no_box": 30
+    }
+  },
+  "iPhone 13": {
+    "base_sell_price": 850,
+    "min_profit": 150,
+    "penalties": {
+      "battery_under_80": 120,
+      "screen_scratches": 80,
+      "non_original_display": 200,
+      "back_glass_damaged": 120,
+      "housing_scratches": 40,
+      "no_box": 20
+    }
+  }
+}

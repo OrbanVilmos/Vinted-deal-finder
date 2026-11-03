@@ -17,6 +17,19 @@ class DealEvaluator:
         shipping_estimate = 14.0
         return round(buyer_protection + shipping_estimate, 2)
 
+    def could_be_profitable(self, listing_price: float) -> bool:
+        """Olcsó előszűrő: a legjobb esetben (hibák nélkül) is lehet-e profit?
+        Ha nem, nem érdemes az OpenAI-t meghívni."""
+        total_cost = listing_price + self.calculate_vinted_fees(listing_price)
+        return any(
+            float(rule["base_sell_price"]) - total_cost >= rule["min_profit"]
+            for rule in self.rules.values()
+        )
+
+    def max_listing_price(self) -> int:
+        """Felső becslés a Vinted price_to szűrőhöz (díjak nélkül)."""
+        return int(max(float(r["base_sell_price"]) - r["min_profit"] for r in self.rules.values()))
+
     def evaluate(self, listing_price: float, analysis: Any) -> Optional[Dict[str, Any]]:
         
         if analysis.is_scam:
