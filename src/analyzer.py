@@ -1,26 +1,26 @@
 import os
 from typing import List, Optional
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
+import requests
 
-# Környezeti változók (.env) betöltése
 load_dotenv()
 
 
 class ListingAnalysis(BaseModel):
-    """Szigorú kimeneti séma az AI válaszához."""
     detected_model: Optional[str] = Field(
         default=None,
         description="A pontos modellnév a konfigurációból: 'iPhone 13 Pro Max', 'iPhone 13 Pro', 'iPhone 13', vagy None ha más típus."
     )
     storage_gb: Optional[int] = Field(
         default=None,
-        description="A telefon tárhelye GB-ban, ha azonosítható (pl. 128, 256)."
+        description="A telefon tárhelye GB-ban, ha azonosítható (pl. 128, 256, 512)."
     )
     battery_health: Optional[int] = Field(
         default=None,
-        description="Akkukapacitás (Battery Health %) ha látható a beállítások fotón vagy szerepel a szövegben."
+        description="Akkukapacitás százalékban (pl. 78, 85, 92), ha látható képen vagy szerepel a leírásban."
     )
     detected_defects: List[str] = Field(
         default_factory=list,
@@ -28,74 +28,65 @@ class ListingAnalysis(BaseModel):
     )
     face_id_functional: bool = Field(
         default=True,
-        description="False, ha a szöveg említi, hogy a Face ID hibás vagy nem működik."
+        description="False, ha hibás a Face ID vagy nem működik."
     )
     is_scam: bool = Field(
         default=False,
-        description="True, ha a hirdetés átverés gyanús: lopott/katalógus fotók, külső platformra terelés (WhatsApp/email), irreális ajánlat."
+        description="True, ha kamu hirdetés, lopott fotók, kamu ár, vagy külső platformra (WhatsApp/külső link) akar terelni."
     )
     scam_reason: Optional[str] = Field(
         default=None,
-        description="Rövid magyarázat magyarul, ha a hirdetés scam gyanús."
+        description="Rövid magyarázat magyarul, ha a hirdetés átverés gyanús."
     )
 
 
 class ListingAnalyzer:
     def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("Az OPENAI_API_KEY nincs beállítva a .env fájlban!")
-        self.client = OpenAI(api_key=api_key)
+            raise ValueError("A GEMINI_API_KEY nincs beállítva a .env fájlban!")
+        self.client = genai.Client(api_key=api_key)
+
+    def _download_image(self, url: str) -> Optional[types.Part]:
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+                return types.Part.from_bytes(data=resp.content, mime_type=content_type)
+        except Exception:
+            pass
+        return None
 
     def analyze(self, title: str, description: str, image_urls: List[str]) -> ListingAnalysis:
-        """
-        Multimodális elemzést futtat: feldolgozza a szöveges leírást és a csatolt képeket.
-        """
-        # Szöveges prompt felépítése
-        user_content = [
-            {
-                "type": "text",
-                "text": (
-                    f"Hirdetés címe: {title}\n"
-                    f"Leírás: {description}\n\n"
-                    "Elemezd a fenti hirdetést és a csatolt fényképeket hardveres állapotfelmérés szempontjából.\n"
-                    "Szabályok:\n"
-                    "1. Ne próbálj piaci árat tippelni!\n"
-                    "2. Csak a megadott lehetséges hibakulcsokat használd a detected_defects tömbben.\n"
-                    "3. Figyeld az utángyártott kijelző jeleit (vastag kávák, hiányzó True Tone, Apple hibaüzenet a képen).\n"
-                    "4. Ha az akku 80% alatti vagy szervizt ír, vedd fel a 'battery_under_80' hibát.\n"
-                    "5. Ha gyanúsan külső oldalra vagy privát chatre akar terelni, jelöld scam-nek."
-                )
-            }
-        ]
-
-        # Képek csatolása (költséghatékonyság miatt legfeljebb az első 4 kép)
-        for url in image_urls[:4]:
-            user_content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": url,
-                    "detail": "low"  # Alacsony felbontás elegendő a hibákhoz és minimális tokenköltséget generál
-                }
-            })
-
-        response = self.client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Tapasztalt okostelefon hardver-diagnosztikai és csalásszűrő szakértő vagy. "
-                        "A feladatod a beérkező használt telefon hirdetések szigorú, kritikus vizsgálata."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": user_content
-                }
-            ],
-            response_format=ListingAnalysis,
-            temperature=0.1
+        prompt_text = (
+            f"Hirdetés címe: {title}\n"
+            f"Leírás: {description}\n\n"
+            "Elemezd a fenti hirdetést és a csatolt fotókat okostelefon felújítási és kereskedelmi szempontból.\n"
+            "Szabályok:\n"
+            "1. Árat ne becsülj!\n"
+            "2. A detected_defects tömbbe KIZÁRÓLAG ezeket a kulcsokat teheted: "
+            "['battery_under_80', 'screen_scratches', 'non_original_display', 'back_glass_damaged', 'housing_scratches', 'no_box']\n"
+            "3. Figyeld az utángyártott kijelző jeleit (vastag kávák, True Tone hiánya, beállításokban Apple hibaüzenet).\n"
+            "4. Ha az akku 80% alatti vagy szervizt jelez, vedd fel a 'battery_under_80' hibát.\n"
+            "5. Ha az ár irreális vagy külső chatre terel, jelöld scam-nek (is_scam=True) és indokold meg a scam_reason mezőben."
         )
 
-        return response.choices[0].message.parsed
+        contents = [prompt_text]
+
+        # Képek csatolása az elemzéshez
+        for url in image_urls[:3]:
+            img_part = self._download_image(url)
+            if img_part:
+                contents.append(img_part)
+
+        response = self.client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=ListingAnalysis,
+                temperature=0.1
+            ),
+        )
+
+        return ListingAnalysis.model_validate_json(response.text)
